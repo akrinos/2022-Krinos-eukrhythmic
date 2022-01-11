@@ -1,0 +1,181 @@
+configfile: "config.yaml"
+
+import os
+import sys
+import pandas as pd
+import shutil
+
+
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21"
+
+folders_touse = [curr for curr in os.listdir(input_dir) if ("jEUKebox" in curr) & (curr != "jEUKebox-Trial2-5k-eHux") & \
+                 (curr != "jEUKebox-Trial2-5k")]
+types_out = ["designer", "CAG", "MAD"]
+                 
+designer_names = ["designer_assembly_" + str(curr) for curr in list(range(1,7))]
+sim_names = ["sim_raw_reads_" + str(curr) for curr in list(range(1,7))]
+assemblers = ["trinity","spades","rnaspades","megahit"]
+                     
+rule all:
+    input:
+        signatures = expand(os.path.join(input_dir, "{folder_curr}", "sourmash_designer", "signatures",
+                            "{descript_curr}.sig"), 
+               folder_curr = folders_touse, descript_curr = designer_names),
+        designer_cmp = expand(os.path.join(input_dir, "{folder_curr}", 
+               "sourmash_designer", "all.cmp"), folder_curr = folders_touse),
+        designer_csv = expand(os.path.join(input_dir, "{folder_curr}", 
+               "sourmash_designer", "all.csv"), folder_curr = folders_touse),
+        designer_sim_cmp = expand(os.path.join(input_dir, "{folder_curr}", 
+               "{descript_curr}_sourmash_{sim_curr}", "all.cmp"), 
+               folder_curr = folders_touse, descript_curr = designer_names,
+               sim_curr = sim_names),
+        designer_sim_csv = expand(os.path.join(input_dir, "{folder_curr}", 
+               "{descript_curr}_sourmash_{sim_curr}", "all.csv"), folder_curr = folders_touse, descript_curr = designer_names,
+               sim_curr = sim_names),
+        cmp_done = expand(os.path.join(input_dir, "{folder_curr}", 
+                   "sourmash_MMETSP", "mmetsp_signatures", "sigsdone.txt"), folder_curr = folders_touse),
+        final_mmetsp = expand(os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", 
+                              "all.mat"), folder_curr = folders_touse),
+        final_mmetsp_csv = expand(os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", 
+                              "all.csv"), folder_curr = folders_touse),
+        CAG_CAG_csv =  os.path.join(input_dir, "all_CAG", "all.csv")
+        
+
+rule sourmash:
+    input: 
+        input_file = os.path.join(input_dir, "{folder_curr}",
+                                  "06-designer_assemblies", "protein",
+                                  "{descript_curr}.pep.fasta")
+    output:
+        os.path.join(input_dir, "{folder_curr}", "sourmash_designer", "signatures", "{descript_curr}.sig")
+    params:
+        kval = 31
+    log:
+        err = os.path.join(input_dir, "{folder_curr}", "logs", "sourmash", "{descript_curr}.err"),
+        out = os.path.join(input_dir, "{folder_curr}", "logs", "sourmash", "{descript_curr}.log")
+    conda: os.path.join("sourmash-env.yaml")
+    shell:
+        """
+        sourmash sketch protein -p scaled=10000,k={params.kval} {input.input_file} -o {output}
+ 2>> {log.err} 1>> {log.out}
+        """
+
+rule sourmash_cmp:
+    input:
+        lambda filename: expand(os.path.join(input_dir, filename.folder_curr, "sourmash_designer", "signatures", 
+                "{descript_curr}.sig"), descript_curr = designer_names)
+    output:
+        mat = os.path.join(input_dir, "{folder_curr}", "sourmash_designer", "all.cmp"),
+        csv = os.path.join(input_dir, "{folder_curr}", "sourmash_designer", "all.csv")
+    params:
+        designer_dir = os.path.join(input_dir, "{folder_curr}", "sourmash_designer", "signatures")
+    conda: os.path.join("sourmash-env.yaml")
+    shell:
+        """
+        sourmash compare -p 8 {params.designer_dir}/* -o {output.mat}
+        sourmash compare -p 8 {params.designer_dir}/*.sig --csv {output.csv}
+        """
+        
+rule sourmash_CAG:
+    input: 
+        input_file = os.path.join(input_dir, "{folder_curr}",
+                                  "eukrhythmic_assembly", "intermediate-files",
+                                  "04-compare", "08-CAG-proteins", "{descript_curr}_CAG.fasta.transdecoder.pep")
+    output:
+        os.path.join(input_dir, "{folder_curr}", "sourmash_CAG", "signatures", "{descript_curr}.sig")
+    params:
+        kval = 31
+    log:
+        err = os.path.join(input_dir, "{folder_curr}", "logs", "sourmash", "{descript_curr}_CAG.err"),
+        out = os.path.join(input_dir, "{folder_curr}", "logs", "sourmash", "{descript_curr}_CAG.log")
+    conda: os.path.join("sourmash-env.yaml")
+    shell:
+        """
+        sourmash sketch protein -p scaled=10000,k={params.kval} {input.input_file} -o {output}
+ 2>> {log.err} 1>> {log.out}
+        """
+        
+rule sourmash_CAG_CAG:
+    input: 
+        input_file = expand(os.path.join(input_dir, "{folder_curr}", "sourmash_CAG",
+                                         "signatures", "{descript_curr}.sig"),
+                                  folder_curr = folders_touse, descript_curr = sim_names)
+    output:
+        mat = os.path.join(input_dir, "all_CAG", "all.cmp"),
+        csv =  os.path.join(input_dir, "all_CAG", "all.csv")
+    conda: os.path.join("sourmash-env.yaml")
+    shell:
+        """
+        sourmash compare -p 8 {input.input_file} -o {output.mat}
+        sourmash compare -p 8 {input.input_file} --csv {output.csv}
+        """
+
+rule sourmash_cmp_des_euk:
+    input:
+        designer_sig = os.path.join(input_dir, "{folder_curr}", "sourmash_designer", 
+                                    "signatures", "{descript_curr}.sig"),
+        CAG_sig = os.path.join(input_dir, "{folder_curr}", "sourmash_CAG", "signatures", "{sim_curr}.sig")
+    output:
+        mat = os.path.join(input_dir, "{folder_curr}", 
+               "{descript_curr}_sourmash_{sim_curr}", "all.cmp"),
+        csv =  os.path.join(input_dir, "{folder_curr}", 
+               "{descript_curr}_sourmash_{sim_curr}", "all.csv")
+    params:
+        designer_dir = os.path.join(input_dir, "{folder_curr}", "sourmash_sim_designer", "signatures")
+    conda: os.path.join("sourmash-env.yaml")
+    shell:
+        """
+        sourmash compare -p 8 {input.designer_sig} {input.CAG_sig} -o {output.mat}
+        sourmash compare -p 8 {input.designer_sig} {input.CAG_sig} --csv {output.csv}
+        """
+        
+rule get_fastas:
+    output:
+        directory(os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_inputs")),
+        is_done = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_inputs", "isdone.txt")
+    params:
+        communities_file = os.path.join(input_dir, "{folder_curr}", "03-community_spec", "communities.csv"),
+        new_dir = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_inputs")
+    run:
+        os.system("mkdir -p " + str(params.new_dir))
+        communities = pd.read_csv(params.communities_file)
+        fastas = communities.Protein_Files
+        for fasta in fastas:
+            shutil.copyfile(fasta, os.path.join(params.new_dir, fasta.split("/")[-1]))
+        with open(output.is_done, 'a'):  # Create file if does not exist
+            pass
+        
+rule mmetsp_sigs:
+    input:
+        is_done = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_inputs", "isdone.txt")
+    output:
+        os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_signatures", "sigsdone.txt")
+    params:
+        kval = 31,
+        mmetsp_dir = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_inputs"),
+        mmetsp_sig_dir = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_signatures")
+    conda: os.path.join("sourmash-env.yaml")
+    shell:
+        """
+        peps=$(ls {params.mmetsp_dir} | grep ".pep.fa")
+        for pep in $peps; do
+            sourmash sketch protein -p scaled=10000,k={params.kval} {params.mmetsp_dir}/$pep -o {params.mmetsp_sig_dir}/$pep.sig
+        done
+        rm -r {params.mmetsp_dir}
+        touch {output}
+        """
+        
+rule sourmash_cmp_mmetsp:
+    input:
+        os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_signatures", "sigsdone.txt")
+    output:
+        mat = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "all.mat"),
+        csv = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "all.csv")
+    params:
+        mmetsp_sig_dir = os.path.join(input_dir, "{folder_curr}", "sourmash_MMETSP", "mmetsp_signatures")
+    conda: os.path.join("sourmash-env.yaml")
+    shell:
+        """
+        sourmash compare -p 8 {params.mmetsp_sig_dir}/*.sig -o {output.mat}
+        sourmash compare -p 8 {params.mmetsp_sig_dir}/*.sig --csv {output.csv}
+        """

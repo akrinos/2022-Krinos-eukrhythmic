@@ -1,0 +1,98 @@
+import os
+import pandas as pd 
+import numpy as np
+
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21"
+folders_touse = [curr for curr in os.listdir(input_dir) if ("jEUKebox" in curr)] # & ("Trial4" not in curr) & ("CommB" not in curr)]
+types_out = ["designer", "CAG", "MAD"]
+                 
+designer_names = ["designer_assembly_" + str(curr) for curr in list(range(1,7))]
+sim_names = ["sim_raw_reads_" + str(curr) for curr in list(range(1,7))]
+assemblers = ["trinity","spades","rnaspades","megahit"]
+                 
+rule all:
+    input:
+        designer_out = expand(os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", 
+                                           "intermediate-files", "04-compare",\
+                                           "xx-individual-proteins",
+                                           "{assembly}_{assembler}.fasta.transdecoder.pep"),
+                              folder_curr = folders_touse,
+                              assembly = sim_names, assembler = assemblers),
+        mmetsp_td = expand(os.path.join(input_dir, "{folder_curr}",
+                                           "11-assembly_transdecoded",
+                                           "{assembly}.fasta.transdecoder.pep"),
+                              folder_curr = folders_touse,
+                              assembly = designer_names)
+                
+rule transdecoder_assembler_simple:
+    input:
+        fastafile = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", 
+                                 "intermediate-files", "02-assembly", "05-assembly",\
+                                 "{assembly}_{assembler}.fasta")
+    output:
+        pep = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files", "04-compare",\
+                           "xx-individual-proteins", "{assembly}_{assembler}.fasta.transdecoder.pep"),
+        gff = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files", "04-compare",\
+                           "xx-individual-proteins", "{assembly}_{assembler}.fasta.transdecoder.gff3"),
+        cds = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files", "04-compare",\
+                           "xx-individual-proteins", "{assembly}_{assembler}.fasta.transdecoder.cds"),
+        bed = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files", "04-compare",\
+                           "xx-individual-proteins", "{assembly}_{assembler}.fasta.transdecoder.bed")
+    params:
+        merged = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files", "04-compare",\
+                           "xx-individual-proteins", "{assembly}_{assembler}"),
+        filename = "{assembly}_{assembler}",
+        wd_path = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files", "04-compare",\
+                           "xx-individual-proteins"),
+        size = 31
+    log:
+        err = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "logs", 
+                           "xx-individual-proteins", "{assembly}_{assembler}.err"),
+        out = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "logs",
+                           "xx-individual-proteins", "{assembly}_{assembler}.log")
+    conda: 
+        os.path.join("td-env.yaml")
+    shell:
+        """
+        unset PERL5LIB
+        mkdir -p {params.wd_path}
+        cp {input.fastafile} {params.merged}.fasta
+        (cd {params.wd_path} && TransDecoder.LongOrfs -t {params.filename}.fasta -m {params.size}) 2> {log.err} 1> {log.out}
+        (cd {params.wd_path} && TransDecoder.Predict -t {params.filename}.fasta --no_refine_starts) 2>> {log.err} 1>> {log.out}
+        rm {params.merged}.fasta
+        sleep 10
+        """
+
+
+
+rule transdecoder_designer_simple:
+    input:
+        fastafile = os.path.join(input_dir, "{folder_curr}", "06-designer_assemblies",
+                                 "{assembly}.fasta")
+    output:
+        pep = os.path.join(input_dir, "{folder_curr}","11-assembly_transdecoded",
+                           "{assembly}.fasta.transdecoder.pep")
+    params:
+        merged = os.path.join(input_dir, "{folder_curr}",\
+                           "11-assembly_transdecoded", "{assembly}"),
+        filename = "{assembly}",
+        wd_path = os.path.join(input_dir, "{folder_curr}", "11-assembly_transdecoded"),
+        size = 31
+    log:
+        err = os.path.join(input_dir, "{folder_curr}", "logs",
+                           "11-assembly_transdecoded", "{assembly}.err"),
+        out = os.path.join(input_dir, "{folder_curr}", "logs",
+                           "11-assembly_transdecoded", "{assembly}.log")
+    conda:
+        os.path.join("td-env.yaml")
+    shell:
+        """
+        unset PERL5LIB
+        mkdir -p {params.wd_path}
+        cp {input.fastafile} {params.merged}.fasta
+        (cd {params.wd_path} && TransDecoder.LongOrfs -t {params.filename}.fasta -m {params.size}) 2> {log.err} 1> {log.out}
+        (cd {params.wd_path} && TransDecoder.Predict -t {params.filename}.fasta --no_refine_starts) 2>> {log.err} 1>> {log.out}
+        rm {params.merged}.fasta
+        sleep 10
+        """ 
+

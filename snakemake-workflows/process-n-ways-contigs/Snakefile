@@ -1,0 +1,145 @@
+import os
+import pandas as pd 
+import numpy as np
+
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic-eLife/notebooks/final/two_way_contigs"
+
+def salmon_get_samples(assembly,left_or_right,list_format):
+    dir_stub = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21"
+    jeukebox_name = assembly.split("_")[0]
+    comm_num = assembly.split("_")[1].split(".")[0]
+    foldername = os.path.join(jeukebox_name, "eukrhythmic_assembly", "intermediate-files", "01-setup",\
+                      "02-trim")
+    extensionname = "trimmed"
+
+    if left_or_right == "left":
+        filenames = os.path.join(dir_stub, foldername, "sim_raw_reads_" + str(comm_num) + "_1." + extensionname + ".fastq.gz") 
+    else:
+        filenames = os.path.join(dir_stub, foldername, "sim_raw_reads_" + str(comm_num) + "_2." + extensionname + ".fastq.gz") 
+    if list_format:
+        return filenames
+    else:
+        return " ".join(filenames)
+                 
+assembly_names = [curr.split(".")[0] for curr in os.listdir(input_dir) if "jEUKebox" in curr]
+                 
+rule all:
+    input:
+        salmon_out = expand(os.path.join(input_dir, "salmon_nt", "{assembly}", "{assembly}_quant", "quant.sf"),assembly=assembly_names),
+        eukulele_out = expand(os.path.join(input_dir, "EUKulele",
+                             "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out"), 
+                             descript_curr = assembly_names),
+        #pep =  expand(os.path.join(input_dir, "transdecoder","{assembly}",
+        #                   "{assembly}.fasta.transdecoder.pep"), assembly = assembly_names),
+        #hits_file = expand(os.path.join(input_dir, "eggnog", "{assembly}.emapper.hits"),assembly=assembly_names),#
+        #salmon_out = expand(os.path.join(input_dir, "salmon_nt", "{assembly}", "{assembly}_quant", "quant.sf"),assembly=assembly_names)
+
+                  
+rule eukulele_four_way:
+    input:
+        input_file = expand(os.path.join(input_dir,"{descript_curr}.fasta"),descript_curr=assembly_names)
+    output:
+        tax_est = expand(os.path.join(input_dir, "EUKulele",
+                        "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out"),
+                        descript_curr=assembly_names)
+    params:
+        prefix = os.path.join(input_dir),
+        eukulele_dir = "EUKulele"
+    shell:
+        '''
+        EUKulele --sample_dir {params.prefix} --database marmmetsp -o {params.prefix}/{params.eukulele_dir} --mets_or_mags mets --n_ext .fasta
+        '''
+        
+rule transdecoder_four_way:
+    input:
+        fastafile = os.path.join(input_dir,"{assembly}.fasta")
+    output:
+        pep =  os.path.join(input_dir, "transdecoder","{assembly}",
+                           "{assembly}.fasta.transdecoder.pep")
+    params:
+        merged = os.path.join(input_dir, "transdecoder", "{assembly}", "{assembly}"),
+        filename = "{assembly}",
+        wd_path = os.path.join(input_dir, "transdecoder", "{assembly}"),
+        size = 31
+    log:
+        err = os.path.join(input_dir, "logs",
+                           "transdecoder", "{assembly}.err"),
+        out = os.path.join(input_dir, "logs",
+                           "transdecoder", "{assembly}.log")
+    conda:
+        os.path.join("td-env.yaml")
+    shell:
+        """
+        unset PERL5LIB
+        mkdir -p {params.wd_path}
+        cp {input.fastafile} {params.merged}.fasta
+        (cd {params.wd_path} && TransDecoder.LongOrfs -t {params.filename}.fasta -m {params.size}) 2> {log.err} 1> {log.out}
+        (cd {params.wd_path} && TransDecoder.Predict -t {params.filename}.fasta --no_refine_starts) 2>> {log.err} 1>> {log.out}
+        rm {params.merged}.fasta
+        sleep 10
+        """
+        
+             
+rule eggnogmap_four_way:
+    input:
+        pep =  os.path.join(input_dir, "transdecoder","{assembly}",
+                           "{assembly}.fasta.transdecoder.pep"),
+    output:
+        hits_file = os.path.join(input_dir, "eggnog", "{assembly}.emapper.hits")
+    params:
+        prefix = "{assembly}",
+        outdir = os.path.join(input_dir,"eggnog"),
+        tmpdir = "tmp_{assembly}_four_way"
+    shell:
+        '''
+        mkdir -p {params.outdir}
+        mkdir -p {params.tmpdir}
+        export EGGNOG_DATA_DIR=../eggnog-snake/eggnog-mapper-data/
+        emapper.py --override -i {input.pep} --itype proteins -m diamond -o {params.prefix} --output_dir {params.outdir} --temp_dir {params.tmpdir}
+        '''
+       
+rule salmon_td:
+    input: 
+        fastafile = os.path.join(input_dir, "transdecoder","{assembly}",
+                           "{assembly}.fasta.transdecoder.pep"),
+        left = lambda filename: salmon_get_samples(filename.assembly, "left", list_format = True),
+        right = lambda filename: salmon_get_samples(filename.assembly, "right", list_format = True)
+    output:
+        os.path.join(input_dir, "salmon", "{assembly}", "{assembly}_quant", "quant.sf")
+    params:
+        libtype = "A",
+        indexname = os.path.join(input_dir, "salmon", "{assembly}", "{assembly}_index"),
+        outdir = os.path.join(input_dir, "salmon", "{assembly}", "{assembly}_quant"),
+        kval = 31
+    log:
+        err = os.path.join(input_dir, "logs", "salmon", "{assembly}.err"),
+        out = os.path.join(input_dir, "logs", "salmon", "{assembly}.log")
+    conda: os.path.join("salmon-env.yaml")
+    shell:
+        """
+        salmon index -t {input.fastafile} -i {params.indexname} -k {params.kval} 2> {log.err} 1> {log.out} || true
+        salmon quant -i {params.indexname} -l {params.libtype} -1 {input.left} -2 {input.right} --validateMappings -o {params.outdir} 2>> {log.err} 1>> {log.out} || true
+        """
+        
+rule salmon_nt:
+    input: 
+        fastafile = os.path.join(input_dir,"{assembly}.fasta"),
+        left = lambda filename: salmon_get_samples(filename.assembly, "left", list_format = True),
+        right = lambda filename: salmon_get_samples(filename.assembly, "right", list_format = True)
+    output:
+        os.path.join(input_dir, "salmon_nt", "{assembly}", "{assembly}_quant", "quant.sf")
+    params:
+        libtype = "A",
+        indexname = os.path.join(input_dir, "salmon_nt", "{assembly}", "{assembly}_index"),
+        outdir = os.path.join(input_dir, "salmon_nt", "{assembly}", "{assembly}_quant"),
+        kval = 31
+    log:
+        err = os.path.join(input_dir, "logs", "salmon_nt", "{assembly}.err"),
+        out = os.path.join(input_dir, "logs", "salmon_nt", "{assembly}.log")
+    conda: os.path.join("salmon-env.yaml")
+    shell:
+        """
+        salmon index -t {input.fastafile} -i {params.indexname} -k {params.kval} 2> {log.err} 1> {log.out} || true
+        salmon quant -i {params.indexname} -l {params.libtype} -1 {input.left} -2 {input.right} --validateMappings -o {params.outdir} 2>> {log.err} 1>> {log.out} || true
+        """
+

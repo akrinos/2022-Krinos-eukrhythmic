@@ -1,0 +1,247 @@
+configfile: "config.yaml"
+    
+import os
+import pandas as pd 
+import numpy as np
+
+min_seq_ids = list(config["min_seq_id_levels"])
+coverage_levels = list(config["coverage_levels"])
+input_directory = config["input_directory"]
+sub_input_directories = [curr for curr in os.listdir(input_directory) if ("jEUKebox" in curr)]
+input_directories = [os.path.join(input_directory, curr) for curr in sub_input_directories]
+output_stub = config["output_directory"]
+output_directories = [os.path.join(input_directory, curr, config["output_directory"]) for curr in sub_input_directories]
+
+# where simulated proteins are inside input directory
+simulated_protein_path = config["simulated_protein_path"]
+# where eukrhythmic proteins are stored
+eukrhythmic_protein_path = config["eukrhythmic_protein_path"]
+
+# where simulated nucleotides are inside input directory
+simulated_nucleotide_path = config["simulated_nucleotide_path"]
+# where eukrhythmic nucleotides are stored
+eukrhythmic_nucleotide_path = config["eukrhythmic_nucleotide_path"]
+
+designer_stub = config["designer_name_stub"]
+simulated_name_stub = config["simulated_name_stub"]
+number_assemblies = list(config["number_assemblies"])
+designer_names = [str(designer_stub) + str(number_assembly) for number_assembly in number_assemblies]
+simulated_names = [str(simulated_name_stub) + str(number_assembly) for number_assembly in number_assemblies]
+
+sub_input_directories = [curr for curr in os.listdir(input_directory) if ("jEUKebox" in curr) & os.path.isdir(os.path.join(input_directory,curr,simulated_nucleotide_path)) & os.path.isdir(os.path.join(input_directory,curr,simulated_protein_path))]
+input_directories = [os.path.join(input_directory, curr) for curr in sub_input_directories]
+output_stub = config["output_directory"]
+output_directories = [os.path.join(input_directory, curr, config["output_directory"]) for curr in sub_input_directories]
+
+def make_name(input_dir, subdir, seq_type, cov_level, seq_id, file_name, ext, number_ext):
+    return str(input_dir.split("/")[-1]) + "_" + str(seq_type) + "_" + \
+            str(subdir.split("/")[-1]) + \
+            "_" + str(cov_level) + "_" + str(seq_id) + \
+            "_" + "".join(str(file_name).split(".")) + "_" + "".join(str(ext).split(".")) + "_" + str(number_ext)
+
+rule all:
+    input:
+        # communities separately for designer assemblies
+        mmseqs_designer = expand(os.path.join("{input_directory}",
+                                              output_stub,
+                                              "clustering_designer",
+                                              "prot",
+                                              "c_{coverage_level}",
+                                              "seqid_{minseqid}",
+                                              "{designer}.pep.fasta"), 
+                                 input_directory = input_directories,
+                                 coverage_level = coverage_levels,
+                                 designer = designer_names,
+                                 minseqid = min_seq_ids),
+        # communities together for designer assemblies
+        mmseqs_designer_merged = expand(os.path.join("{input_directory}",
+                                              output_stub,
+                                              "clustering_designer",
+                                              "prot",
+                                              "c_{coverage_level}",
+                                              "seqid_{minseqid}",
+                                              "merged.pep.fasta"), 
+                                 input_directory = input_directories,
+                                 coverage_level = coverage_levels,
+                                 minseqid = min_seq_ids),
+        # individual communities for CAG + Designer
+        mmseqs_designer_cag = expand(os.path.join("{input_directory}",
+                                              output_stub,
+                                              "clustering_sim_designer",
+                                              "prot-merge",
+                                              "c_{coverage_level}",
+                                              "seqid_{minseqid}",
+                                              "{sim}_and_{designer}.fasta"), 
+                                 input_directory = input_directories,
+                                 designer = designer_names,
+                                 sim = simulated_names,
+                                 coverage_level = coverage_levels,
+                                 minseqid = min_seq_ids),
+        # same thing for CAG + Designer, but with cd-hit
+        cdhit_designer_cag = expand(os.path.join("{input_directory}",
+                                                 output_stub,"clustering_sim_designer_cdhit",
+                                                 "prot",
+                                                 "c_{coverage_level}",
+                                                 "seqid_{minseqid}",
+                                                 "{sim}_and_{designer}.clstr"),
+                                 input_directory = input_directories,
+                                 designer = designer_names,
+                                 sim = simulated_names,
+                                 coverage_level = coverage_levels,
+                                 minseqid = [curr for curr in min_seq_ids if curr >= 0.8])
+
+rule rename_individual_designer:
+    input:
+        file_in = os.path.join("{input_directory}",
+                               simulated_protein_path,
+                               "{filename}.{extension}")
+    output:
+        file_out = os.path.join("{input_directory}",output_stub,"prime",
+                                "{in_sub_dir}","prot",
+                                "{filename}.{extension}")
+    shell:
+        '''
+        cp {input.file_in} {output.file_out}
+        '''
+
+rule merge_individual_designer:
+    input:
+        file_in = (lambda filename: expand(os.path.join(filename.input_directory,
+                               simulated_protein_path,
+                               "{designer}.{extension}"), 
+                         designer = designer_names, 
+                         extension = "pep.fasta"))
+    output:
+        file_out = os.path.join("{input_directory}",output_stub,"prime",
+                                "clustering_designer","prot",
+                                "merged.{extension}")
+    shell:
+        '''
+        cat {input.file_in} > {output.file_out}
+        '''
+
+rule merge_sim_designer:
+    input:
+        sim_assembly = os.path.join("{input_directory}",
+                               eukrhythmic_protein_path,
+                               "{sim}_CAG.fasta.transdecoder.pep"),
+        designer_assembly = os.path.join("{input_directory}",
+                               simulated_protein_path,
+                               "{designer}.pep.fasta")
+    output:
+        combo = os.path.join("{input_directory}",output_stub,"prime",
+                             "{in_sub_dir}","prot-merge",
+                             "{sim}_and_{designer}.fasta")
+    shell:
+        '''
+        sed 's/>.*/&_'"_reassembled_product"'/' {input.sim_assembly} | sed 's, ,_,g' > {output.combo}
+        sed 's/>.*/&_'"_designer_assemblies"'/' {input.designer_assembly} | sed 's, ,_,g' | sed 's,|,_,g' >> {output.combo}
+        '''
+        
+rule mmseqs_rule:
+    input:
+        infiles = os.path.join("{input_directory}",output_stub,"prime",
+                               "{sub_dir}","{sequence_type}",
+                               "{filename}.fasta")
+    output:
+        outfasta = os.path.join("{input_directory}",output_stub,"{sub_dir}","{sequence_type}",
+                               "c_{coverage_level}","seqid_{minseqid}",
+                               "{filename}.fasta"),
+        outtsv = os.path.join("{input_directory}",output_stub,"{sub_dir}","{sequence_type}",
+                               "c_{coverage_level}","seqid_{minseqid}",
+                               "{filename}.tsv")
+    params:
+        threads = 10,
+        maxmemory = 15000, # -G o indicates local sequence identity.
+        minseqid = "{minseqid}",
+        coverage = "{coverage_level}",
+        name_db = (lambda filename: make_name(filename.input_directory, filename.sub_dir, 
+                                              filename.sequence_type, filename.coverage_level, 
+                                              filename.minseqid, filename.filename,
+                                              "fasta", number_ext = "one")),
+        name_intermed = (lambda filename: make_name(filename.input_directory, filename.sub_dir, 
+                                              filename.sequence_type, filename.coverage_level, 
+                                              filename.minseqid, filename.filename, 
+                                              "fasta", number_ext = "two")),
+        name_subdb = (lambda filename: make_name(filename.input_directory, filename.sub_dir, 
+                                              filename.sequence_type, filename.coverage_level, 
+                                              filename.minseqid, filename.filename, 
+                                              "fasta", number_ext = "three")),
+        tmpdir = (lambda filename: make_name(filename.input_directory, filename.sub_dir, 
+                                              filename.sequence_type, filename.coverage_level, 
+                                              filename.minseqid, filename.filename, "fasta", number_ext = "tmp"))
+    log:
+        err = os.path.join("{input_directory}", output_stub, "{sub_dir}",
+                           "{sequence_type}", "c_{coverage_level}",
+                           "seqid_{minseqid}", "logs", "{filename}.err"),
+        out = os.path.join("{input_directory}", output_stub, "{sub_dir}",
+                           "{sequence_type}", "c_{coverage_level}",
+                           "seqid_{minseqid}", "logs", "{filename}.log")
+    shell:
+        '''
+        mmseqs createdb {input.infiles} {params.name_db} 
+        mmseqs linclust {params.name_db} {params.name_intermed} {params.tmpdir} --min-seq-id {params.minseqid} --cov-mode 1 -c {params.coverage} 2> {log.err} 1> {log.out}
+        mmseqs createsubdb {params.name_intermed} {params.name_db} {params.name_subdb}
+        mmseqs convert2fasta {params.name_subdb} {output.outfasta}
+        mmseqs createtsv {params.name_db} {params.name_db} {params.name_intermed} {output.outtsv}
+        rm -f {params.name_db}*
+        rm -f {params.name_intermed}*
+        rm -f {params.name_subdb}*
+        rm -rf {params.tmpdir}
+        '''
+        
+rule cdhit_rule:
+    input:
+        sim_assembly = os.path.join("{input_directory}",
+                               eukrhythmic_protein_path,
+                               "{sim}_CAG.fasta.transdecoder.pep"),
+        designer_assembly = os.path.join("{input_directory}",
+                               simulated_protein_path,
+                               "{designer}.pep.fasta")
+    output:
+        outfasta = os.path.join("{input_directory}",output_stub,"{sub_dir}","prot",
+                                "c_{coverage_level}","seqid_{minseqid}",
+                                "{sim}_and_{designer}.clstr")
+    params:
+        threads = 10,
+        maxmemory = 15000, # -G o indicates local sequence identity.
+        coverage = "{coverage_level}",
+        minseqid = "{minseqid}",
+        outfile = os.path.join("{input_directory}",output_stub,"{sub_dir}","prot",
+                               "c_{coverage_level}","seqid_{minseqid}",
+                               "{sim}_and_{designer}")
+    log:
+        err = os.path.join("{input_directory}", output_stub, "{sub_dir}",
+                           "prot", "c_{coverage_level}",
+                           "seqid_{minseqid}", "logs", "{sim}_{designer}.err"),
+        out = os.path.join("{input_directory}", output_stub, "{sub_dir}",
+                           "prot", "c_{coverage_level}",
+                           "seqid_{minseqid}", "logs", "{sim}_{designer}.log")
+    shell:
+        '''
+        cd-hit-est-2d -i {input.sim_assembly} -i2 {input.designer_assembly} -o {params.outfile} -c {params.minseqid} -aS {params.coverage} -n 5 -d 30 -M 16000 -T 8
+        '''
+            
+rule combine_files:
+    input:
+        cag_assembly = os.path.join("{input_stubs}", simulated_protein_path, "{assembly}_merged.fasta"),
+        designer_assembly = os.path.join("{input_stubs}", simulated_protein_path, "{designer}.fasta")
+    output:
+        combo = os.path.join("{input_stubs}", "clustering_check", "{assembly}_merged.{designer}.fasta")
+    shell:
+        '''
+        sed 's/>.*/&_'"_reassembled_product"'/' {input.cag_assembly} | sed 's, ,_,g' > {output.combo}
+        sed 's/>.*/&_'"_designer_assemblies"'/' {input.designer_assembly} | sed 's, ,_,g' | sed 's,|,_,g' >> {output.combo}
+        '''
+        
+rule combine_files_prot:
+    input:
+        cag_assembly = os.path.join("{input_stubs}", simulated_protein_path, "{assembly}_CAG.fasta.transdecoder.pep"),
+        designer_assembly = os.path.join("{input_stubs}", simulated_protein_path, "protein", "{designer}.pep.fasta")
+    output:
+        combo = os.path.join("{input_stubs}", "clustering_check", "{assembly}_merged.{designer}.pep.fasta")
+    shell:
+        '''
+        sed 's/>.*/&_'"_reassembled_product"'/' {input.cag_assembly} | sed 's, ,_,g' > {output.combo}
+        sed 's/>.*/&_'"_designer_assemblies"'/' {input.designer_assembly} | sed 's, ,_,g' | sed 's,|,_,g' >> {output.combo}
+        '''

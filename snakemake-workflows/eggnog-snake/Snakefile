@@ -1,0 +1,106 @@
+import os
+import pandas as pd 
+import numpy as np
+
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21"
+
+folders_touse = [curr for curr in os.listdir(input_dir) if ("jEUKebox" in curr)]# & ("100k" not in curr)]# & ("Trial4" not in curr) & ("CommB" not in curr)]
+types_out = ["designer", "CAG", "MAD"]
+                 
+designer_names = ["designer_assembly_" + str(curr) for curr in list(range(1,7))]
+sim_names = ["sim_raw_reads_" + str(curr) for curr in list(range(1,7))]
+assemblers = ["trinity","spades","rnaspades","megahit"]
+                 
+rule all:
+    input:
+        designer_out = expand(os.path.join(input_dir, "{folder_curr}", "eggnog_designer",
+                            "{descript_curr}.emapper.hits"), 
+               folder_curr = folders_touse, type_curr = types_out, descript_curr = designer_names),
+        assembler_out = expand(os.path.join(input_dir, "{folder_curr}", "eggnog_assembler",
+                            "{descript_curr}_{assembler}.emapper.hits"), 
+               folder_curr = folders_touse, type_curr = types_out, descript_curr = sim_names, assembler = assemblers),
+        cag_out = expand(os.path.join(input_dir, "{folder_curr}", "eggnog_CAG",
+                            "{descript_curr}.emapper.hits"), 
+               folder_curr = folders_touse, type_curr = types_out, descript_curr = sim_names),
+        designer_mad_out = expand(os.path.join(input_dir,"{folder_curr}", "eggnog_MAD",
+                            "{folder_curr}.emapper.hits"), zip, 
+               folder_curr = folders_touse, type_curr = types_out)
+                  
+
+rule eggnogmap_designer:
+    input:
+        input_file = os.path.join(input_dir, "{folder_curr}",
+                                  "06-designer_assemblies", "protein",
+                                  "{descript_curr}.pep.fasta")
+    output:
+        hits_file = os.path.join(input_dir, "{folder_curr}",
+                                 "eggnog_designer", "{descript_curr}.emapper.hits")
+    params:
+        prefix = "{descript_curr}",
+        outdir = os.path.join(input_dir, "{folder_curr}", "eggnog_designer"),
+        tmpdir = "tmp_{descript_curr}_{folder_curr}_designer"
+    shell:
+        '''
+        mkdir -p {params.outdir}
+        mkdir -p {params.tmpdir}
+        export EGGNOG_DATA_DIR=eggnog-mapper-data/
+        emapper.py --override -i {input.input_file} --itype proteins -m diamond -o {params.prefix} --output_dir {params.outdir} --temp_dir {params.tmpdir}
+        '''
+
+rule eggnogmap_assembly:
+    input:
+        input_file = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files",
+                                 "04-compare", "xx-individual-proteins",
+                                 "{descript_curr}_{assembler}.fasta.transdecoder.pep")
+        #input_file = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files",
+        #                          "02-assembly", "05-assembly", "{descript_curr}_{assembler}.fasta")
+    output:
+        hits_file = os.path.join(input_dir, "{folder_curr}", "eggnog_assembler", "{descript_curr}_{assembler}.emapper.hits")
+    params:
+        prefix = "{descript_curr}_{assembler}",
+        outdir = os.path.join(input_dir, "{folder_curr}", "eggnog_assembler"),
+        tmpdir = "tmp_{descript_curr}_{folder_curr}_{assembler}"
+    shell:
+        '''
+        mkdir -p {params.outdir}
+        mkdir -p {params.tmpdir}
+        export EGGNOG_DATA_DIR=eggnog-mapper-data/
+        emapper.py --override -i {input.input_file} --itype proteins -m diamond -o {params.prefix} --output_dir {params.outdir} --temp_dir {params.tmpdir}
+        '''
+                  
+rule eggnogmap_cag:
+    input:
+        input_file = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files",
+                                  "04-compare", "08-CAG-proteins", "{descript_curr}_CAG.fasta.transdecoder.pep")
+    output:
+        hits_file = os.path.join(input_dir, "{folder_curr}", "eggnog_CAG", "{descript_curr}.emapper.hits")
+    params:
+        prefix = "{descript_curr}",
+        outdir = os.path.join(input_dir,"{folder_curr}", "eggnog_CAG"),
+        tmpdir = "tmp_{descript_curr}_{folder_curr}_designer"
+    shell:
+        '''
+        mkdir -p {params.outdir}
+        mkdir -p {params.tmpdir}
+        export EGGNOG_DATA_DIR=eggnog-mapper-data/
+        emapper.py --override -i {input.input_file} --itype proteins -m diamond -o {params.prefix} --output_dir {params.outdir} --temp_dir {params.tmpdir}
+        '''
+           
+#"04-compare", "08-CAG-proteins", "{descript_curr}_CAG.fasta.transdecoder.pep")
+rule eggnogmap_mad:
+    input:
+        input_file = os.path.join(input_dir, "{folder_curr}", "eukrhythmic_assembly", "intermediate-files",
+                                  "03-merge","12-MAD","MAD.nospace.fasta")
+    output:
+        hits_file = os.path.join(input_dir, "{folder_curr}", "eggnog_MAD", "{folder_curr}.emapper.hits")
+    params:
+        prefix = "{folder_curr}",
+        outdir = os.path.join(input_dir,"{folder_curr}", "eggnog_MAD"),
+        tmpdir = "tmp_{folder_curr}_MAD"
+    shell:
+        '''
+        mkdir -p {params.outdir}
+        mkdir -p {params.tmpdir}
+        export EGGNOG_DATA_DIR=eggnog-mapper-data/
+        emapper.py -i {input.input_file} --itype CDS -m diamond -o {params.prefix} --output_dir {params.outdir} --temp_dir {params.tmpdir}
+        '''

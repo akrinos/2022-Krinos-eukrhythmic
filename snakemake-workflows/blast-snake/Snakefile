@@ -1,0 +1,88 @@
+configfile: "config.yaml"
+
+import os
+import pandas as pd 
+import numpy as np
+
+output_dir = ""
+blast_res_out = "blast_out"
+
+input_directory = config["input_directory"]
+sub_input_directories = [curr for curr in os.listdir(input_directory) if ("jEUKebox" in curr)]
+input_directories = [os.path.join(input_directory, curr) for curr in sub_input_directories]
+output_stub = config["output_directory"]
+output_directories = [os.path.join(input_directory, curr, config["output_directory"]) for curr in sub_input_directories]
+
+# where simulated proteins are inside input directory
+simulated_protein_path = config["simulated_protein_path"]
+# where eukrhythmic proteins are stored
+eukrhythmic_protein_path = config["eukrhythmic_protein_path"]
+
+# where simulated nucleotides are inside input directory
+simulated_nucleotide_path = config["simulated_nucleotide_path"]
+# where eukrhythmic nucleotides are stored
+eukrhythmic_nucleotide_path = config["eukrhythmic_nucleotide_path"]
+
+designer_stub = config["designer_name_stub"]
+simulated_name_stub = config["simulated_name_stub"]
+number_assemblies = list(config["number_assemblies"])
+designer_names = [str(designer_stub) + str(number_assembly) for number_assembly in number_assemblies]
+simulated_names = [str(simulated_name_stub) + str(number_assembly) for number_assembly in number_assemblies]
+
+sub_input_directories = [curr for curr in os.listdir(input_directory) if ("jEUKebox" in curr) & os.path.isdir(os.path.join(input_directory,curr,simulated_nucleotide_path)) & os.path.isdir(os.path.join(input_directory,curr,simulated_protein_path))]
+input_directories = [os.path.join(input_directory, curr) for curr in sub_input_directories]
+input_directories_dict = dict(zip(sub_input_directories, input_directories))
+print(input_directories_dict["jEUKebox-Trial1-100k"])
+rule all:
+    input:
+        blast_out = expand(os.path.join(output_dir, "eval_1_blast_top_1", "{input_directory}", "rhythmic_{sim}_euk_{designer}",
+                            "blast_formatted.reduced.out"),
+                        input_directory = sub_input_directories, sim = simulated_names, designer = designer_names)
+
+rule blast_make_db:
+    input:
+        designer_assembly = lambda filename: os.path.join(input_directories_dict[filename.input_directory],
+                               simulated_protein_path,
+                               filename.designer + ".pep.fasta")
+    output:
+        os.path.join(output_dir, "blast_dbs", "{input_directory}", "{designer}.phr")
+    params:
+        db = os.path.join(output_dir, "blast_dbs", "{input_directory}", "{designer}"),
+        designer = "{designer}"
+    shell:
+        '''
+        makeblastdb -dbtype prot -title {params.db} -in {input.designer_assembly} -out {params.db}
+        '''
+        
+rule blast_search:
+    input:
+        db = os.path.join(output_dir, "blast_dbs", "{input_directory}", "{designer}.phr"),
+        query = lambda filename: os.path.join(input_directories_dict[filename.input_directory],
+                               eukrhythmic_protein_path,
+                               filename.sim+"_CAG.fasta.transdecoder.pep")
+    output:
+        os.path.join(output_dir, "blast_out_1", "{input_directory}", "rhythmic_{sim}_euk_{designer}",
+                            "blast_formatted.out")
+    params:
+        db = os.path.join(output_dir, "blast_dbs", "{input_directory}", "{designer}")
+    shell:
+        '''
+        blastp -db {params.db} -out {output} -query {input.query} -outfmt 6 -num_threads 8 -evalue 1
+        '''
+        
+rule select_best_hits:
+    input:
+        blast_in = os.path.join(output_dir, "blast_out_1", "{input_directory}","rhythmic_{sim}_euk_{designer}",
+                            "blast_formatted.out")
+    output:
+        blast_out = os.path.join(output_dir, "eval_1_blast_top_1", "{input_directory}","rhythmic_{sim}_euk_{designer}",
+                            "blast_formatted.reduced.out")
+    run:
+        blast_file = pd.read_csv(input.blast_in, sep = "\t", header=None,
+                         names=["qseqid","sseqid","pident","length","mismatch",
+                                "gapopen","qstart","qend","sstart","send","evalue","bitscore"])
+        blast_file = blast_file.reset_index(drop=True)
+        reduced_file = blast_file.loc[blast_file.groupby("qseqid")['bitscore'].nlargest(1).reset_index(level="qseqid").index,:]
+        reduced_file.to_csv(output.blast_out, sep="\t")
+        
+        

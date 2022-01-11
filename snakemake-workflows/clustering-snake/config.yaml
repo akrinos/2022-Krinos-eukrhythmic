@@ -1,0 +1,31 @@
+designer_name_stub: designer_assembly_
+number_assemblies:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+simulated_name_stub: sim_raw_reads_
+input_directory: /vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21
+eukrhythmic_protein_path: eukrhythmic_assembly/intermediate-files/04-compare/08-CAG-proteins
+eukrhythmic_nucleotide_path: eukrhythmic_assembly/intermediate-files/03-merge/07-CAG
+simulated_protein_path: 06-designer_assemblies/protein
+simulated_nucleotide_path: 06-designer_assemblies
+coverage_levels:
+    - 1
+    - 0.99
+    - 0.95
+    - 0.90
+    - 0.80
+    - 0.75
+    - 0.60
+min_seq_id_levels:
+    - 1
+    - 0.99
+    - 0.95
+    - 0.90
+    - 0.80
+    - 0.75
+    - 0.60
+output_directory: clustering

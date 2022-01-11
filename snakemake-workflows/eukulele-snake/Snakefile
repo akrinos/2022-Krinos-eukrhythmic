@@ -1,0 +1,39 @@
+import os
+import pandas as pd 
+import numpy as np
+
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21"
+
+folders_touse = [curr for curr in os.listdir(input_dir) if ("jEUKebox" in curr)]# & (curr != "jEUKebox-Trial2-CommB")]
+types_out = ["designer", "CAG", "MAD"]
+                 
+designer_names = ["designer_assembly_" + str(curr) for curr in list(range(1,7))]
+sim_names = ["sim_raw_reads_" + str(curr) for curr in list(range(1,7))]
+assemblers = ["trinity","spades","rnaspades","megahit"]
+                 
+rule all:
+    input:
+        eukulele_out = expand(os.path.join(input_dir, "{folder_curr}", "EUKulele_CAG_newnames",
+                             "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out"), 
+               folder_curr = folders_touse, type_curr = types_out, descript_curr = sim_names[0])
+
+                  
+
+rule eukulele_CAG:
+    input:
+        input_file = os.path.join(input_dir, "{folder_curr}",
+                                  "eukrhythmic_assembly", "intermediate-files", "03-merge", "07-CAG",
+                                  "{descript_curr}_merged.fasta")
+    output:
+        tax_est = os.path.join(input_dir, "{folder_curr}", "EUKulele_CAG_newnames",
+                             "taxonomy_estimation", "{descript_curr}_merged-estimated-taxonomy.out")
+    params:
+        prefix = os.path.join(input_dir, "{folder_curr}"),
+        eukulele_dir = "EUKulele_CAG_newnames",
+        sample_dir = "07-CAG",
+        outdir = os.path.join(input_dir, "{folder_curr}", "EUKulele_CAG_newnames"),
+        tmpdir = "tmp_{descript_curr}_{folder_curr}_designer"
+    shell:
+        '''
+        EUKulele --sample_dir {params.prefix}/eukrhythmic_assembly/intermediate-files/03-merge/{params.sample_dir}/ --database marmmetsp -o {params.prefix}/{params.eukulele_dir} --mets_or_mags mets --n_ext .fasta
+        '''

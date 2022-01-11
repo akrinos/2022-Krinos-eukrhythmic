@@ -1,0 +1,31 @@
+configfile: "config.yaml"
+
+import os
+import pandas as pd 
+import numpy as np
+
+input_dir = "/vortexfs1/omics/alexander/akrinos/2021-testing-eukrhythmic/eukrhythmic_paper_trials_September21"
+proteins_commA = config["protein_files_commA"]
+proteins_commB = config["protein_files_commB"]
+
+mmetsp_ids_A = [curr.split("/")[-1].split("_clean")[0] for curr in proteins_commA]
+mmetsp_ids_B = [curr.split("/")[-1].split("_clean")[0] for curr in proteins_commB]
+
+rule all:
+    input:
+        hits_file_A = expand(os.path.join("busco_assess","commA","{mmetsp_id}","busco_done.txt"),mmetsp_id = mmetsp_ids_A),
+        hits_file_B = expand(os.path.join("busco_assess","commB","{mmetsp_id}","busco_done.txt"),mmetsp_id = mmetsp_ids_B)
+                  
+
+rule busco:
+    input:
+        mmetsp_file = os.path.join("/vortexfs1","omics","alexander","data","mmetsp","{mmetsp_id}_clean.pep.fa")
+    output:
+        hits_file = os.path.join("busco_assess","{comm}","{mmetsp_id}","busco_done.txt")
+    params:
+        busco_dir =  "{comm}_{mmetsp_id}" #os.path.join("busco_assess","{comm}","{mmetsp_id}")
+    shell:
+        '''
+        busco -i {input.mmetsp_file} -f -l lineages/eukaryota_odb10 -o {params.busco_dir} -m protein
+        touch {output.hits_file}
+        '''
