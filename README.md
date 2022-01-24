@@ -15,3 +15,4 @@ All `Snakemake` workflows used to further process output from `eukrhythmic` are 
 7. `salmon-snake`: calculate coverage of raw reads by assemblies using the `Salmon` software.
 8. `sourmash-snake`: calculate similarity within and between communities using the `sourmash` software.
 9. `transdecoder-snake`: identify proteins using `TransDecoder`.
+
