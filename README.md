@@ -16,3 +16,12 @@ All `Snakemake` workflows used to further process output from `eukrhythmic` are 
 8. `sourmash-snake`: calculate similarity within and between communities using the `sourmash` software.
 9. `transdecoder-snake`: identify proteins using `TransDecoder`.
 
+## Jupyter notebooks
+
+These are all of the data analysis notebooks used to process the output of the eukrhythmic data and generate figures and tables for the paper.
+
+### Python-based notebooks
+1. `organize-data.ipynb` - read in all clustered data from eukrhythmic and designer assemblies; create CSV output for use in other notebooks.
+2. `generate-tables.ipynb` 
+
+### R-based notebooks
