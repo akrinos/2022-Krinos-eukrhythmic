@@ -22,6 +22,9 @@ These are all of the data analysis notebooks used to process the output of the e
 
 ### Python-based notebooks
 1. `organize-data.ipynb` - read in all clustered data from eukrhythmic and designer assemblies; create CSV output for use in other notebooks.
-2. `generate-tables.ipynb` 
+2. `generate-tables.ipynb` - create tables printed in the manuscript and collate statistics about recovery of genera
+3. `narragansett-process.ipynb` - read in and collate Narragansett Bay assembly output for shipment to plotting notebook
+4. `subset-assemblies.ipynb` - separate the clustered assembly output into how many assemblers they were originally recovered from to check out what happens when you use 1 vs. multiple assemblers
 
 ### R-based notebooks
+1. `plotting-data.ipynb` - code to generate all figures in the paper
