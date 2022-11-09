@@ -1,6 +1,6 @@
 # Code repository for eukrhythmic paper
 
-Code and data repository for 2022 eukrhythmic manuscript.
+Code and data repository for 2022 eukrhythmic manuscript. Please consider [citing the manuscript](https://www.biorxiv.org/content/10.1101/2022.04.25.489326v1.full.pdf+html) or reaching out to the authors on the Issues tab if you find these resources useful.
 
 ## Snakemake workflows
 
